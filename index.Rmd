@@ -1,0 +1,125 @@
+---
+title: "Primates en Costa Rica"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Preparativos
+```{r carga-paquetes, message=FALSE, warning=FALSE}
+# Carga de paquetes
+library(dplyr)
+library(sf)
+library(DT)
+library(plotly)
+library(leaflet)
+library(raster)
+library(spData)
+```
+
+```{r carga-datos}
+# Carga de datos
+
+prim <-
+  st_read(
+    "https://raw.githubusercontent.com/gf0604-procesamientodatosgeograficos/2021i-datos/main/gbif/primates-cr-registros.csv",
+    options = c(
+      "X_POSSIBLE_NAMES=decimalLongitude",
+      "Y_POSSIBLE_NAMES=decimalLatitude"
+    ),
+    quiet = TRUE
+  )
+
+# Asignación de CRS
+st_crs(prim) = 4326
+
+# Capa geoespacial de cantones
+cantones <-
+  st_read(
+    "https://raw.githubusercontent.com/gf0604-procesamientodatosgeograficos/2021i-datos/main/ign/delimitacion-territorial-administrativa/cr_cantones_simp_wgs84.geojson",
+    quiet = TRUE
+  )
+
+```
+
+```{r cruce-cantones, message=FALSE}
+# Cruce espacial con la tabla de cantones
+prim <- 
+  prim %>%
+  st_join(cantones["canton"])
+
+```
+
+# Tabla de registro
+```{r Tabla}
+prim %>%
+  st_drop_geometry() %>%
+  dplyr::select(stateProvince, canton, eventDate, family, species) %>%
+  datatable(
+    colnames = c("Provincia", "Cantón", "Fecha", "Familia", "Especie"),
+    options = list(searchHighlight = TRUE)
+  )
+
+```
+
+
+# Gráfico
+```{r}
+prim %>%
+  st_drop_geometry() %>%
+  group_by(month = format(as.Date(eventDate, "%Y-%m-%d"), "%m")) %>%
+  summarize(species = n()) %>%
+  filter(!is.na(month))  %>%
+  plot_ly(x = ~ month,
+          y = ~ species,
+          type="scatter", mode="markers", fill = "tozeroy", fillcolor = "orange") %>%
+  layout(title = "Especies",
+         xaxis = list(title = "Mes"),
+         yaxis = list(title = "Cantidad de registros de especies"))
+
+```
+
+
+# Mapa
+```{r mapa}
+prim %>%
+  dplyr::select(stateProvince,
+         canton,
+         locality,
+         eventDate,
+         decimalLongitude,
+         decimalLatitude) %>%
+  leaflet() %>%
+  addProviderTiles(providers$OpenStreetMap.Mapnik, group = "OpenStreetMap") %>%
+  addProviderTiles(providers$Stamen.TonerLite, group = "Stamen Toner Lite") %>%
+  addProviderTiles(providers$Esri.WorldImagery, group = "Imágenes de ESRI") %>%
+  addCircleMarkers(
+    stroke = F,
+    radius = 4,
+    fillColor = 'gray',
+    fillOpacity = 1,
+    popup = paste(
+      prim$stateProvince,
+      prim$canton,
+      prim$locality,
+      prim$eventDate,
+      prim$decimalLongitude,
+      prim$decimalLatitude,
+      sep = '<br/>'
+    ),
+    group = "Primates"
+  ) %>%
+  addLayersControl(
+    baseGroups = c("OpenStreetMap", "Stamen Toner Lite", "Imágenes de ESRI"),
+    overlayGroups = c("Primates")
+  ) %>%
+  addMiniMap(
+    tiles = providers$Stamen.OpenStreetMap.Mapnik,
+    position = "bottomleft",
+    toggleDisplay = TRUE
+  )
+
+```
+
